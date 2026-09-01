@@ -3,11 +3,21 @@ camera:
   reconnect: true
 
 processing:
-  target_fps: 25
+  target_fps: 20
+  width: 1280
+  height: 720
 
 detection:
+  model: yolov8n.pt
+  confidence: 0.40
   classes:
     - person
 
+tracking:
+  tracker: botsort
+
 analytics:
   entry_line: null
+
+storage:
+  type: sqlite
