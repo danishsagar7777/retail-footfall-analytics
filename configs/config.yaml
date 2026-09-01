@@ -1,0 +1,13 @@
+camera:
+  source: rtsp
+  reconnect: true
+
+processing:
+  target_fps: 25
+
+detection:
+  classes:
+    - person
+
+analytics:
+  entry_line: null
