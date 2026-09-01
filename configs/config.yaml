@@ -17,7 +17,5 @@ tracking:
   tracker: botsort
 
 analytics:
-  entry_line: null
-
-storage:
+  counting_line: [136, 399, 1138, 399]
   type: sqlite

@@ -1,61 +1,76 @@
 import os
 import time
 
-from ultralytics import YOLO
-
 from src.input.rtsp_reader import RTSPReader
 from src.input.frame_processor import resize_frame
+from ultralytics import YOLO
 
 
 def main():
+
     rtsp_url = os.getenv("RTSP_URL")
 
     if not rtsp_url:
         raise RuntimeError("RTSP_URL is not set.")
 
+    reader = RTSPReader(rtsp_url)
+
     model = YOLO("yolov8n.pt")
 
-    reader = RTSPReader(rtsp_url)
     reader.connect()
 
-    total_frames = 0
-    total_time = 0.0
-
+    print("RTSP connected.")
     print("Benchmarking YOLO...")
+    print("Press Ctrl+C to stop.")
 
-    while total_frames < 100:
-        ret, frame = reader.read()
+    frames = 0
+    start_time = time.monotonic()
 
-        if not ret:
-            continue
+    try:
 
-        frame = resize_frame(frame)
+        while True:
 
-        start = time.perf_counter()
+            ret, frame = reader.read()
 
-        model(
-            frame,
-            classes=[0],
-            conf=0.40,
-            verbose=False
+            if not ret:
+                continue
+
+            frame = resize_frame(frame)
+
+            model(
+                frame,
+                classes=[0],
+                conf=0.40,
+                verbose=False,
+            )
+
+            frames += 1
+
+            if frames % 100 == 0:
+
+                elapsed = time.monotonic() - start_time
+
+                fps = frames / elapsed
+
+                print(
+                    f"Frames: {frames} | "
+                    f"YOLO FPS: {fps:.2f}"
+                )
+
+    except KeyboardInterrupt:
+
+        elapsed = time.monotonic() - start_time
+
+        print("\nStopping...")
+
+        print(
+            f"Final YOLO FPS: "
+            f"{frames / elapsed:.2f}"
         )
 
-        elapsed = time.perf_counter() - start
+    finally:
 
-        total_time += elapsed
-        total_frames += 1
-
-    reader.release()
-
-    avg_time = total_time / total_frames
-    fps = 1.0 / avg_time
-
-    print()
-    print("========== YOLO BENCHMARK ==========")
-    print(f"Frames tested : {total_frames}")
-    print(f"Avg latency   : {avg_time * 1000:.2f} ms")
-    print(f"Model FPS     : {fps:.2f}")
-    print("=====================================")
+        reader.release()
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from src.tracking.track import Track
 
 
 class PersonTracker:
+
     def __init__(
         self,
         model_path="yolov8n.pt",
@@ -11,10 +12,12 @@ class PersonTracker:
         confidence=0.40,
     ):
         self.model = YOLO(model_path)
+
         self.tracker_config = tracker_config
         self.confidence = confidence
 
     def update(self, frame):
+
         results = self.model.track(
             frame,
             persist=True,
@@ -28,28 +31,29 @@ class PersonTracker:
 
         tracks = []
 
-        # No bounding boxes
         if result.boxes is None:
             return tracks
 
-        # Boxes exist, but tracker has not assigned IDs
-        if result.boxes.id is None:
+        boxes = result.boxes
+
+        if boxes.id is None:
             return tracks
 
-        boxes = result.boxes.xyxy.cpu().tolist()
-        ids = result.boxes.id.int().cpu().tolist()
-        confidences = result.boxes.conf.cpu().tolist()
+        ids = boxes.id.cpu().tolist()
+        xyxy = boxes.xyxy.cpu().tolist()
+        confs = boxes.conf.cpu().tolist()
 
-        for bbox, track_id, confidence in zip(
-            boxes,
+        for track_id, bbox, confidence in zip(
             ids,
-            confidences,
+            xyxy,
+            confs,
         ):
+
             tracks.append(
                 Track(
-                    track_id=track_id,
+                    track_id=int(track_id),
                     bbox=tuple(bbox),
-                    confidence=confidence,
+                    confidence=float(confidence),
                 )
             )
 
