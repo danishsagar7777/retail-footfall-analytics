@@ -1,9 +1,4 @@
 camera:
-  source: rtsp
-  reconnect: true
-
-processing:
-  target_fps: 20
   width: 1280
   height: 720
 
@@ -11,11 +6,17 @@ detection:
   model: yolov8n.pt
   confidence: 0.40
   classes:
-    - person
+    - 0
 
 tracking:
-  tracker: botsort
+  tracker: botsort.yaml
 
 analytics:
   counting_line: [136, 399, 1138, 399]
-  type: sqlite
+  event_cooldown: 2.0
+
+processing:
+  frame_skip: 1
+
+output:
+  log_file: logs/footfall_events.csv

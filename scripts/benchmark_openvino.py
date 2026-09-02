@@ -1,9 +1,13 @@
 import os
 import time
 
+from ultralytics import YOLO
+
 from src.input.rtsp_reader import RTSPReader
 from src.input.frame_processor import resize_frame
-from ultralytics import YOLO
+
+
+MODEL_PATH = "yolov8n_openvino_model"
 
 
 def main():
@@ -13,14 +17,16 @@ def main():
     if not rtsp_url:
         raise RuntimeError("RTSP_URL is not set.")
 
+    print("Loading OpenVINO YOLO model...")
+    model = YOLO(MODEL_PATH)
+
     reader = RTSPReader(rtsp_url)
 
-    model = YOLO("yolov8n.pt")
-
+    print("Connecting to RTSP stream...")
     reader.connect()
 
     print("RTSP connected.")
-    print("Benchmarking YOLO...")
+    print("Benchmarking OpenVINO YOLO...")
     print("Press Ctrl+C to stop.")
 
     frames = 0
@@ -39,7 +45,7 @@ def main():
 
             model(
                 frame,
-		imgsz=640,
+                imgsz=640,
                 classes=[0],
                 conf=0.40,
                 verbose=False,
@@ -50,12 +56,11 @@ def main():
             if frames % 100 == 0:
 
                 elapsed = time.monotonic() - start_time
-
                 fps = frames / elapsed
 
                 print(
                     f"Frames: {frames} | "
-                    f"YOLO FPS: {fps:.2f}"
+                    f"OpenVINO YOLO FPS: {fps:.2f}"
                 )
 
     except KeyboardInterrupt:
@@ -64,10 +69,11 @@ def main():
 
         print("\nStopping...")
 
-        print(
-            f"Final YOLO FPS: "
-            f"{frames / elapsed:.2f}"
-        )
+        if elapsed > 0:
+            print(
+                f"Final OpenVINO YOLO FPS: "
+                f"{frames / elapsed:.2f}"
+            )
 
     finally:
 
