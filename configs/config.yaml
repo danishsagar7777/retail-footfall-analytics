@@ -7,12 +7,14 @@ detection:
   confidence: 0.40
   classes:
     - 0
+  imgsz: 640
 
 tracking:
   tracker: botsort.yaml
 
 analytics:
   counting_line: [136, 399, 1138, 399]
+  line_buffer: 12
   event_cooldown: 2.0
 
 processing:

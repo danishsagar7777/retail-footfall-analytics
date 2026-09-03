@@ -1,5 +1,7 @@
 import os
+import time
 import yaml
+from dataclasses import dataclass
 
 from ultralytics import YOLO
 
@@ -9,74 +11,109 @@ from src.analytics.pipeline import FootfallPipeline
 from src.utils.fps import FPSCounter
 
 
-def load_config():
-    with open("configs/config.yaml", "r") as file:
-        return yaml.safe_load(file)
+@dataclass
+class SimpleTrack:
+    track_id: int
+    bbox: tuple
+    confidence: float
+
+    @property
+    def center(self):
+        x1, y1, x2, y2 = self.bbox
+
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+
+        return cx, cy
+
+
+def load_config(path="configs/config.yaml"):
+    with open(path, "r") as f:
+        return yaml.safe_load(f)
 
 
 def main():
 
-    # Load configuration
     config = load_config()
 
-    counting_line = tuple(
-        config["analytics"]["counting_line"]
-    )
-
-    confidence = config["detection"]["confidence"]
-
-    # RTSP URL
     rtsp_url = os.getenv("RTSP_URL")
 
     if not rtsp_url:
-        raise RuntimeError("RTSP_URL is not set.")
+        raise RuntimeError(
+            "RTSP_URL environment variable is not set"
+        )
 
-    # Load OpenVINO model
-    print("Loading OpenVINO YOLO model...")
+    confidence = config["detection"]["confidence"]
+    classes = config["detection"]["classes"]
+    imgsz = config["detection"].get("imgsz", 640)
 
-    model = YOLO("yolov8n_openvino_model")
+    counting_line = config["analytics"]["counting_line"]
 
-    # Initialize components
+    line_buffer = config["analytics"].get(
+        "line_buffer",
+        12.0,
+    )
+
+    event_cooldown = config["analytics"].get(
+        "event_cooldown",
+        2.0,
+    )
+
+    log_file = config["output"]["log_file"]
+
+    model_path = "yolov8n_openvino_model"
+
+    print(
+        f"Loading OpenVINO model: {model_path}"
+    )
+
+    model = YOLO(model_path)
+
     reader = RTSPReader(rtsp_url)
 
     pipeline = FootfallPipeline(
-        counting_line=counting_line
+        counting_line,
+        log_file=log_file,
+        event_cooldown=event_cooldown,
+        line_buffer=line_buffer,
     )
 
     fps_counter = FPSCounter()
 
-    # Connect to RTSP
-    print("Connecting to RTSP stream...")
-
-    reader.connect()
-
-    print("RTSP stream connected.")
-    print("Starting OpenVINO footfall pipeline...")
-    print("Press Ctrl+C to stop.")
+    reader.start()
 
     frame_count = 0
+
+    print(
+        "Starting optimized OpenVINO "
+        "footfall pipeline..."
+    )
+
+    print(f"Log file: {log_file}")
+    print(f"YOLO image size: {imgsz}")
+    print(f"Confidence: {confidence}")
+    print(f"Event cooldown: {event_cooldown}s")
+    print(f"Line buffer: {line_buffer}px")
 
     try:
 
         while True:
 
-            # Read frame
             ret, frame = reader.read()
 
             if not ret:
-                print("Failed to receive frame.")
+                time.sleep(0.001)
                 continue
 
-            # Resize to 1280x720
             frame = resize_frame(frame)
 
-            # OpenVINO YOLO + BoT-SORT
             results = model.track(
                 frame,
                 persist=True,
-                tracker="botsort.yaml",
-                classes=[0],
+                tracker=config["tracking"]["tracker"],
+                classes=classes,
                 conf=confidence,
+                imgsz=imgsz,
                 verbose=False,
             )
 
@@ -84,87 +121,97 @@ def main():
 
             tracks = []
 
-            if (
-                result.boxes is not None
-                and result.boxes.id is not None
-            ):
+            if result.boxes is not None:
 
-                ids = result.boxes.id.cpu().tolist()
-                boxes = result.boxes.xyxy.cpu().tolist()
+                boxes = result.boxes
 
-                for track_id, bbox in zip(ids, boxes):
+                if boxes.id is not None:
 
-                    x1, y1, x2, y2 = bbox
+                    ids = boxes.id.cpu().tolist()
+                    xyxy = boxes.xyxy.cpu().tolist()
+                    confs = boxes.conf.cpu().tolist()
 
-                    center = (
-                        (x1 + x2) / 2,
-                        (y1 + y2) / 2,
-                    )
+                    for (
+                        track_id,
+                        bbox,
+                        track_confidence,
+                    ) in zip(
+                        ids,
+                        xyxy,
+                        confs,
+                    ):
 
-                    class SimpleTrack:
-
-                        def __init__(
-                            self,
-                            track_id,
-                            center,
-                        ):
-                            self.track_id = int(track_id)
-                            self.center = center
-
-                    tracks.append(
-                        SimpleTrack(
-                            track_id,
-                            center,
+                        tracks.append(
+                            SimpleTrack(
+                                track_id=int(track_id),
+                                bbox=tuple(bbox),
+                                confidence=float(
+                                    track_confidence
+                                ),
+                            )
                         )
-                    )
 
-            # Footfall analytics
             events = pipeline.update(tracks)
 
-            # FPS
             fps_counter.update()
             frame_count += 1
 
-            # Print events
             for event in events:
 
                 print(
-                    f"EVENT | "
-                    f"Track ID={event['track_id']} | "
-                    f"{event['event'].upper()}"
+                    f"EVENT: "
+                    f"track_id={event['track_id']} "
+                    f"type={event['event']}"
                 )
 
-            # Print statistics
             if frame_count % 100 == 0:
 
                 summary = pipeline.summary()
 
-                print()
-                print(f"FRAME      : {frame_count}")
-                print(f"FPS        : {fps_counter.fps:.2f}")
-                print(f"ENTRIES    : {summary['entries']}")
-                print(f"EXITS      : {summary['exits']}")
-                print(f"OCCUPANCY  : {summary['occupancy']}")
-                print()
+                print(
+                    f"Frames: {frame_count} | "
+                    f"FPS: {fps_counter.fps:.2f} | "
+                    f"Entries: {summary['entries']} | "
+                    f"Exits: {summary['exits']} | "
+                    f"Occupancy: {summary['occupancy']} | "
+                    f"Reconnects: "
+                    f"{reader.reconnect_count} | "
+                    f"Skipped: "
+                    f"{reader.dropped_frames}"
+                )
 
     except KeyboardInterrupt:
 
-        print("\nStopping...")
-
-        summary = pipeline.summary()
-
-        print()
-        print("Final OpenVINO Footfall Summary")
-        print("--------------------------------")
-        print(f"Frames     : {frame_count}")
-        print(f"FPS        : {fps_counter.fps:.2f}")
-        print(f"Entries    : {summary['entries']}")
-        print(f"Exits      : {summary['exits']}")
-        print(f"Occupancy  : {summary['occupancy']}")
+        print("\nStopping pipeline...")
 
     finally:
 
         reader.release()
+
+        summary = pipeline.summary()
+
+        print("\nFinal summary:")
+        print(summary)
+
+        print(
+            f"Average FPS: "
+            f"{fps_counter.fps:.2f}"
+        )
+
+        print(
+            f"RTSP reconnects: "
+            f"{reader.reconnect_count}"
+        )
+
+        print(
+            f"Skipped frames: "
+            f"{reader.dropped_frames}"
+        )
+
+        print(
+            f"Events logged to: "
+            f"{log_file}"
+        )
 
 
 if __name__ == "__main__":

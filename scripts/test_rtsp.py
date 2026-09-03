@@ -1,52 +1,50 @@
-import os
-import cv2
 import time
 
 from src.input.rtsp_reader import RTSPReader
 
 
+RTSP_URL = (
+    "rtsp://admin:Admin1234@192.168.1.165/cam/realmonitor?channel=1&subtype=00&authbasic=YWRtaW46QWRtaW4xMjMh"
+)
+
+
 def main():
-    rtsp_url = os.getenv("RTSP_URL")
-
-    if not rtsp_url:
-        raise RuntimeError(
-            "RTSP_URL environment variable is not set."
-        )
-
-    reader = RTSPReader(rtsp_url)
-    reader.connect()
-
-    frame_count = 0
-    start_time = time.time()
-
-    print("Receiving frames...")
-    print("Press Ctrl+C to stop.")
+    reader = RTSPReader(RTSP_URL)
 
     try:
+        reader.start()
+
+        print("Receiving frames...")
+        print("Press Ctrl+C to stop.")
+
+        frame_count = 0
+        start_time = time.monotonic()
+
         while True:
             ret, frame = reader.read()
 
             if not ret:
-                print("Failed to read frame.")
-                break
+                time.sleep(0.005)
+                continue
 
             frame_count += 1
 
-            if frame_count % 30 == 0:
-                elapsed = time.time() - start_time
+            elapsed = time.monotonic() - start_time
 
+            if elapsed >= 5.0:
                 fps = frame_count / elapsed
-
-                height, width = frame.shape[:2]
 
                 print(
                     f"Frames: {frame_count} | "
                     f"FPS: {fps:.2f} | "
-                    f"Resolution: {width}x{height}"
+                    f"Shape: {frame.shape}"
                 )
 
+                frame_count = 0
+                start_time = time.monotonic()
+
     except KeyboardInterrupt:
-        print("\nStopping...")
+        print("\nStopping RTSP test...")
 
     finally:
         reader.release()
