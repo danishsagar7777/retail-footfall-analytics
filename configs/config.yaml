@@ -3,7 +3,7 @@ camera:
   height: 720
 
 detection:
-  model: yolov8n.pt
+  model: yolov8n_openvino_model
   confidence: 0.40
   classes:
     - 0

@@ -1,11 +1,9 @@
 .venv/
 __pycache__/
 *.pyc
-.env
+.pytest_cache/
+logs/*.csv
 *.mp4
 *.avi
 *.mkv
-*.jpg
-*.jpeg
-*.png
-logs/
+yolov8n.pt
